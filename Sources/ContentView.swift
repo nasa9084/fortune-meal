@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var isSavingPreset = false
     @State private var newPresetName = ""
     @State private var newMealName = ""
+    @State private var isAddingMeal = false
     @State private var result: String?
     @State private var isRolling = false
     @State private var hapticTrigger = 0
@@ -40,21 +41,19 @@ struct ContentView: View {
                 HStack {
                     Text("候補（\(selectedMeals.count) / \(meals.count) 件を選択中）")
                     Spacer()
+                    Button {
+                        newMealName = ""
+                        isAddingMeal = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .padding(.trailing, 8)
                     Menu {
                         Button("すべて選択") { setAll(true) }
                         Button("すべて解除") { setAll(false) }
                     } label: {
                         Image(systemName: "checklist")
                     }
-                }
-            }
-
-            Section {
-                HStack {
-                    TextField("食事を追加", text: $newMealName)
-                        .onSubmit(addMeal)
-                    Button("追加", action: addMeal)
-                        .disabled(trimmedName.isEmpty)
                 }
             }
         }
@@ -75,6 +74,11 @@ struct ContentView: View {
         .onAppear(perform: load)
         .onChange(of: meals) { save() }
         .onChange(of: presets) { savePresets() }
+        .alert("候補を追加", isPresented: $isAddingMeal) {
+            TextField("食事の名前（例: 焼き鳥）", text: $newMealName)
+            Button("追加", action: addMeal)
+            Button("キャンセル", role: .cancel) {}
+        }
         .alert("プリセットを保存", isPresented: $isSavingPreset) {
             TextField("名前（例: こってり）", text: $newPresetName)
             Button("保存", action: addPreset)
