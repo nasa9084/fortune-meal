@@ -65,9 +65,14 @@ struct ContentView: View {
         // 結果とボタンは画面下端に固定し、リストだけがスクロールする
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
-                resultView
+                // 結果はくじを引いたあとだけ表示する
+                if isRolling || result != nil {
+                    resultView
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 drawButton
             }
+            .animation(.snappy, value: result == nil)
             .padding()
             .background(.bar)
         }
@@ -137,10 +142,10 @@ struct ContentView: View {
 
     private var resultView: some View {
         VStack(spacing: 4) {
-            Text(isRolling ? "抽選中…" : (result == nil ? "今日のごはんは？" : "今日のごはんは"))
+            Text(isRolling ? "抽選中…" : "今日のごはんは")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text(result ?? "？")
+            Text(result ?? " ")
                 .font(.system(size: 40, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
