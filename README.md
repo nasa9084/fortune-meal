@@ -26,7 +26,7 @@ GitHub Actionsで未署名のIPAをビルドし、SideStoreで無料Apple IDで�
 
 ## 更新
 
-- mainにpushするとビルド番号が上がり、SideStoreにアップデートとして表示される（タップで更新）
+- mainにpushするとビルド番号が上がる。SideStoreの「My Apps」を下に引っぱって更新するとアップデートが表示される（タップで更新）
 - 7日ごとの署名延長は、ショートカットのオートメーションで「LocalDevVPN接続 → 待機 → SideStoreのRefresh All Apps」を定期実行する
 
 ## 注意
