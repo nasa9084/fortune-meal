@@ -17,8 +17,6 @@ struct Preset: Identifiable, Codable, Hashable {
 enum SharedStore {
     static let baseBundleID = "com.nasa9084.gohankuji"
     static let widgetBundleSuffix = ".FortuneWidget"
-    /// ウィジェットの「今の選択」ボタンに使う特別なID
-    static let currentSelectionID = "current"
 
     /// SideStore は Bundle ID と App Group ID の末尾に Team ID を付けて署名し直す。
     /// （例: com.nasa9084.gohankuji.ABCDE12345 / group.com.nasa9084.gohankuji.ABCDE12345）

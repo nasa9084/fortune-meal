@@ -22,10 +22,7 @@ struct DrawIntent: AppIntent {
         let candidates: [Meal]
         let source: String
 
-        if presetID == SharedStore.currentSelectionID {
-            candidates = meals.filter(\.isSelected)
-            source = "今の選択"
-        } else if let preset = SharedStore.loadPresets()?.first(where: { $0.id.uuidString == presetID }) {
+        if let preset = SharedStore.loadPresets()?.first(where: { $0.id.uuidString == presetID }) {
             candidates = meals.filter { preset.mealIDs.contains($0.id) }
             source = preset.name
         } else {
@@ -60,7 +57,6 @@ struct FortuneProvider: TimelineProvider {
             result: "カレー",
             source: "こってり",
             buttons: [
-                DrawButton(id: "current", title: "今の選択"),
                 DrawButton(id: "a", title: "こってり"),
                 DrawButton(id: "b", title: "さっぱり"),
             ]
@@ -82,8 +78,7 @@ struct FortuneProvider: TimelineProvider {
             date: .now,
             result: SharedStore.lastResult,
             source: SharedStore.lastSource,
-            buttons: [DrawButton(id: SharedStore.currentSelectionID, title: "今の選択")]
-                + presets.map { DrawButton(id: $0.id.uuidString, title: $0.name) }
+            buttons: presets.map { DrawButton(id: $0.id.uuidString, title: $0.name) }
         )
     }
 }
@@ -94,41 +89,53 @@ struct FortuneWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: FortuneEntry
 
-    private var maxButtons: Int {
+    private var isSmall: Bool { family == .systemSmall }
+
+    /// サイズごとのボタンの最大数と列数
+    private var layout: (max: Int, columns: Int) {
         switch family {
-        case .systemSmall: 2
-        case .systemMedium: 4
-        default: 8
+        case .systemSmall: (4, 2)
+        case .systemMedium: (6, 3)
+        default: (12, 3)
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: isSmall ? 4 : 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(entry.source.map { "\($0)から" } ?? "今日のごはんは")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Text(entry.result ?? "？")
-                    .font(.title2.bold())
+                    .font(isSmall ? .headline : .title2.bold())
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                    .contentTransition(.opacity)
             }
 
             Spacer(minLength: 0)
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
-                ForEach(Array(entry.buttons.prefix(maxButtons)), id: \.self) { button in
-                    Button(intent: DrawIntent(presetID: button.id)) {
-                        Text(button.title)
-                            .font(.caption.bold())
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity)
+            if entry.buttons.isEmpty {
+                Text("アプリでプリセットを作ってください")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: layout.columns),
+                    spacing: 4
+                ) {
+                    ForEach(Array(entry.buttons.prefix(layout.max)), id: \.self) { button in
+                        Button(intent: DrawIntent(presetID: button.id)) {
+                            Text(button.title)
+                                .font(.caption2.bold())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.6)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(.orange)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.orange)
                 }
             }
         }
