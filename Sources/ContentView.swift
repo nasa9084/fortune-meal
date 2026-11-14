@@ -38,8 +38,6 @@ struct ContentView: View {
 
     var body: some View {
         List {
-            presetSection
-
             Section {
                 ForEach($meals) { $meal in
                     Button {
@@ -76,6 +74,11 @@ struct ContentView: View {
                 }
             }
         }
+        // プリセットは画面上端に固定する。
+        // List の行の中に置くと、行内の contextMenu が先頭の1つしか効かないため
+        .safeAreaInset(edge: .top, spacing: 0) {
+            presetBar
+        }
         // 結果とボタンは画面下端に固定し、リストだけがスクロールする
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 12) {
@@ -100,43 +103,39 @@ struct ContentView: View {
 
     // MARK: - 部品
 
-    private var presetSection: some View {
-        Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(presets) { preset in
-                        Button {
-                            apply(preset)
-                        } label: {
-                            chip(preset.name, isActive: isActive(preset))
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("今の選択で上書き", systemImage: "square.and.arrow.down") {
-                                overwrite(preset)
-                            }
-                            Button("削除", systemImage: "trash", role: .destructive) {
-                                presets.removeAll { $0.id == preset.id }
-                            }
-                        }
-                    }
-
+    private var presetBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(presets) { preset in
                     Button {
-                        newPresetName = ""
-                        isSavingPreset = true
+                        apply(preset)
                     } label: {
-                        chip("＋ 保存", isActive: false)
+                        chip(preset.name, isActive: isActive(preset))
                     }
                     .buttonStyle(.plain)
-                    .disabled(selectedMeals.isEmpty)
+                    .contextMenu {
+                        Button("今の選択で上書き", systemImage: "square.and.arrow.down") {
+                            overwrite(preset)
+                        }
+                        Button("削除", systemImage: "trash", role: .destructive) {
+                            presets.removeAll { $0.id == preset.id }
+                        }
+                    }
                 }
-                .padding(.vertical, 4)
+
+                Button {
+                    newPresetName = ""
+                    isSavingPreset = true
+                } label: {
+                    chip("＋ 保存", isActive: false)
+                }
+                .buttonStyle(.plain)
+                .disabled(selectedMeals.isEmpty)
             }
-        } header: {
-            Text("プリセット")
-        } footer: {
-            Text("タップで候補を切り替え、長押しで上書き・削除")
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
+        .background(.bar)
     }
 
     private func chip(_ title: String, isActive: Bool) -> some View {
