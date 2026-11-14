@@ -3,6 +3,7 @@ import WidgetKit
 
 struct ContentView: View {
     @State private var meals: [Meal] = []
+    @AppStorage("sortOrder") private var sortOrder: SortOrder = .name
     @State private var presets: [Preset] = []
     @State private var isSavingPreset = false
     @State private var newPresetName = ""
@@ -22,49 +23,46 @@ struct ContentView: View {
     ]
 
     private var selectedMeals: [Meal] { meals.filter(\.isSelected) }
+    /// 画面に出す順番。保存順（追加順）はそのままにして、表示だけ並べ替える
+    private var displayedMeals: [Meal] {
+        switch sortOrder {
+        case .added:
+            return meals
+        case .name:
+            return meals.sorted { $0.sortKey.localizedStandardCompare($1.sortKey) == .orderedAscending }
+        case .selectedFirst:
+            return meals.enumerated()
+                .sorted { a, b in
+                    if a.element.isSelected != b.element.isSelected { return a.element.isSelected }
+                    return a.offset < b.offset
+                }
+                .map(\.element)
+        }
+    }
+
+    private func binding(for id: UUID) -> Binding<Meal> {
+        Binding(
+            get: { meals.first { $0.id == id } ?? Meal(name: "") },
+            set: { newValue in
+                if let i = meals.firstIndex(where: { $0.id == id }) { meals[i] = newValue }
+            }
+        )
+    }
+
     private var trimmedName: String { newMealName.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
         List {
             Section {
-                ForEach($meals) { $meal in
-                    // 1行に2つボタンを置くので borderless にする（行全体が1つのボタンにならないように）
-                    HStack {
-                        Button {
-                            meal.isSelected.toggle()
-                        } label: {
-                            HStack {
-                                Image(systemName: meal.isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(meal.isSelected ? Color.accentColor : .secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(meal.name)
-                                        .foregroundStyle(.primary)
-                                    // お店が登録されていれば、名前の下に灰色で小さく出す
-                                    if meal.mapsURL != nil {
-                                        Label(
-                                            meal.placeIsLink ? "Google Mapsのお店" : (meal.place ?? ""),
-                                            systemImage: "map"
-                                        )
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                    }
-                                }
-                                Spacer()
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            editingMeal = EditTarget(id: meal.id)
-                        } label: {
-                            Image(systemName: "info.circle")
-                        }
-                        .buttonStyle(.borderless)
+                ForEach(displayedMeals) { item in
+                    MealRow(meal: binding(for: item.id)) {
+                        editingMeal = EditTarget(id: item.id)
                     }
                 }
-                .onDelete { meals.remove(atOffsets: $0) }
+                .onDelete { offsets in
+                    let ids = Set(offsets.map { displayedMeals[$0].id })
+                    meals.removeAll { ids.contains($0.id) }
+                }
             } header: {
                 HStack {
                     Text("候補（\(selectedMeals.count) / \(meals.count) 件を選択中）")
@@ -74,6 +72,16 @@ struct ContentView: View {
                         isAddingMeal = true
                     } label: {
                         Image(systemName: "plus")
+                    }
+                    .padding(.trailing, 8)
+                    Menu {
+                        Picker("並び順", selection: $sortOrder) {
+                            ForEach(SortOrder.allCases, id: \.self) { order in
+                                Text(order.title).tag(order)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
                     }
                     .padding(.trailing, 8)
                     Menu {
@@ -301,6 +309,93 @@ struct ContentView: View {
     private func savePresets() {
         SharedStore.savePresets(presets)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+enum SortOrder: String, CaseIterable {
+    case name, added, selectedFirst
+
+    var title: String {
+        switch self {
+        case .name: "名前順"
+        case .added: "追加順"
+        case .selectedFirst: "選択中を上に"
+        }
+    }
+}
+
+extension Meal {
+    /// 名前順に並べるためのキー。漢字も読み（ひらがな）に直して五十音順にする
+    var sortKey: String {
+        let text = name as NSString
+        let tokenizer = CFStringTokenizerCreate(
+            nil, text, CFRange(location: 0, length: text.length),
+            kCFStringTokenizerUnitWordBoundary, Locale(identifier: "ja") as CFLocale
+        )
+        var reading = ""
+        var lastEnd = 0
+        while CFStringTokenizerAdvanceToNextToken(tokenizer) != [] {
+            let range = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            if range.location > lastEnd {
+                reading += text.substring(with: NSRange(location: lastEnd, length: range.location - lastEnd))
+            }
+            let token = text.substring(with: NSRange(location: range.location, length: range.length))
+            if let latin = CFStringTokenizerCopyCurrentTokenAttribute(tokenizer, kCFStringTokenizerAttributeLatinTranscription) as? String,
+               token.unicodeScalars.contains(where: { (0x4E00...0x9FFF).contains($0.value) }) {
+                // 漢字を含む語だけ、ローマ字の読みをひらがなに戻して使う
+                reading += latin.applyingTransform(.latinToHiragana, reverse: false) ?? token
+            } else {
+                reading += token
+            }
+            lastEnd = range.location + range.length
+        }
+        if lastEnd < text.length {
+            reading += text.substring(from: lastEnd)
+        }
+        // カタカナもひらがなにそろえる
+        return reading.applyingTransform(.hiraganaToKatakana, reverse: true) ?? reading
+    }
+}
+
+/// 候補リストの1行
+struct MealRow: View {
+    @Binding var meal: Meal
+    var onEdit: () -> Void
+
+    var body: some View {
+        // 1行に2つボタンを置くので borderless にする（行全体が1つのボタンにならないように）
+        HStack {
+            Button {
+                meal.isSelected.toggle()
+            } label: {
+                HStack {
+                    Image(systemName: meal.isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(meal.isSelected ? Color.accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(meal.name)
+                            .foregroundStyle(.primary)
+                        // お店が登録されていれば、名前の下に灰色で小さく出す
+                        if meal.mapsURL != nil {
+                            Label(
+                                meal.placeIsLink ? "Google Mapsのお店" : (meal.place ?? ""),
+                                systemImage: "map"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        }
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: onEdit) {
+                Image(systemName: "info.circle")
+            }
+            .buttonStyle(.borderless)
+        }
     }
 }
 
