@@ -1,23 +1,7 @@
 import SwiftUI
-
-struct Meal: Identifiable, Codable, Hashable {
-    var id = UUID()
-    var name: String
-    var isSelected: Bool = true
-}
-
-/// 候補の選び方を名前を付けて保存したもの（「こってり」「さっぱり」など）
-struct Preset: Identifiable, Codable, Hashable {
-    var id = UUID()
-    var name: String
-    var mealIDs: Set<UUID>
-}
+import WidgetKit
 
 struct ContentView: View {
-    // 候補リストを端末に保存する（アプリを閉じても残る）
-    @AppStorage("meals") private var mealsData: Data = Data()
-    @AppStorage("presets") private var presetsData: Data = Data()
-
     @State private var meals: [Meal] = []
     @State private var presets: [Preset] = []
     @State private var isSavingPreset = false
@@ -183,6 +167,10 @@ struct ContentView: View {
                 try? await Task.sleep(for: .milliseconds(40 + i * 15))
             }
             result = selectedMeals.randomElement()?.name
+            if let result {
+                SharedStore.setLastResult(result, source: "アプリ")
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             isRolling = false
             hapticTrigger += 1
         }
@@ -224,13 +212,15 @@ struct ContentView: View {
     }
 
     private func load() {
-        if let saved = try? JSONDecoder().decode([Meal].self, from: mealsData), !saved.isEmpty {
+        SharedStore.migrateFromStandardDefaults()
+
+        if let saved = SharedStore.loadMeals(), !saved.isEmpty {
             meals = saved
         } else {
             meals = defaultMeals.map { Meal(name: $0) }
         }
 
-        if let saved = try? JSONDecoder().decode([Preset].self, from: presetsData) {
+        if let saved = SharedStore.loadPresets() {
             presets = saved
         } else {
             // 初回だけ、名前が一致する候補でデフォルトのプリセットを作る
@@ -241,16 +231,14 @@ struct ContentView: View {
         }
     }
 
-    private func savePresets() {
-        if let data = try? JSONEncoder().encode(presets) {
-            presetsData = data
-        }
+    private func save() {
+        SharedStore.saveMeals(meals)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(meals) {
-            mealsData = data
-        }
+    private func savePresets() {
+        SharedStore.savePresets(presets)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
