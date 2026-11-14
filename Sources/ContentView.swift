@@ -36,12 +36,19 @@ struct ContentView: View {
                             HStack {
                                 Image(systemName: meal.isSelected ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(meal.isSelected ? Color.accentColor : .secondary)
-                                Text(meal.name)
-                                    .foregroundStyle(.primary)
-                                if meal.mapsURL != nil {
-                                    Image(systemName: "mappin.circle.fill")
-                                        .foregroundStyle(.red)
-                                        .imageScale(.small)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(meal.name)
+                                        .foregroundStyle(.primary)
+                                    // お店が登録されていれば、名前の下に灰色で小さく出す
+                                    if meal.mapsURL != nil {
+                                        Label(
+                                            meal.placeIsLink ? "Google Mapsのお店" : (meal.place ?? ""),
+                                            systemImage: "map"
+                                        )
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    }
                                 }
                                 Spacer()
                             }
