@@ -9,6 +9,9 @@ struct ContentView: View {
     @State private var newMealName = ""
     @State private var isAddingMeal = false
     @State private var result: String?
+    @State private var resultMealID: UUID?
+    @State private var editingMeal: EditTarget?
+    @Environment(\.openURL) private var openURL
     @State private var isRolling = false
     @State private var hapticTrigger = 0
 
@@ -25,15 +28,33 @@ struct ContentView: View {
         List {
             Section {
                 ForEach($meals) { $meal in
-                    Button {
-                        meal.isSelected.toggle()
-                    } label: {
-                        HStack {
-                            Image(systemName: meal.isSelected ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(meal.isSelected ? Color.accentColor : .secondary)
-                            Text(meal.name)
-                                .foregroundStyle(.primary)
+                    // 1行に2つボタンを置くので borderless にする（行全体が1つのボタンにならないように）
+                    HStack {
+                        Button {
+                            meal.isSelected.toggle()
+                        } label: {
+                            HStack {
+                                Image(systemName: meal.isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(meal.isSelected ? Color.accentColor : .secondary)
+                                Text(meal.name)
+                                    .foregroundStyle(.primary)
+                                if meal.mapsURL != nil {
+                                    Image(systemName: "mappin.circle.fill")
+                                        .foregroundStyle(.red)
+                                        .imageScale(.small)
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.borderless)
+
+                        Button {
+                            editingMeal = EditTarget(id: meal.id)
+                        } label: {
+                            Image(systemName: "info.circle")
+                        }
+                        .buttonStyle(.borderless)
                     }
                 }
                 .onDelete { meals.remove(atOffsets: $0) }
@@ -90,6 +111,11 @@ struct ContentView: View {
             Button("キャンセル", role: .cancel) {}
         } message: {
             Text("今選んでいる\(selectedMeals.count)件を保存します")
+        }
+        .sheet(item: $editingMeal) { target in
+            if let i = meals.firstIndex(where: { $0.id == target.id }) {
+                MealEditView(meal: $meals[i])
+            }
         }
         .sensoryFeedback(.success, trigger: hapticTrigger) // 決まった瞬間に振動
     }
@@ -149,6 +175,24 @@ struct ContentView: View {
                 .font(.system(size: 40, weight: .bold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+
+            if !isRolling, let meal = meals.first(where: { $0.id == resultMealID }) {
+                if let memo = meal.memo, !memo.isEmpty {
+                    Text(memo)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if let url = meal.mapsURL {
+                    Button {
+                        openURL(url)
+                    } label: {
+                        Label(meal.placeIsLink ? "Google Mapsで開く" : "道案内", systemImage: "map")
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
+                }
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -175,7 +219,9 @@ struct ContentView: View {
                 result = selectedMeals.randomElement()?.name
                 try? await Task.sleep(for: .milliseconds(40 + i * 15))
             }
-            result = selectedMeals.randomElement()?.name
+            let pick = selectedMeals.randomElement()
+            result = pick?.name
+            resultMealID = pick?.id
             if let result {
                 SharedStore.setLastResult(result, source: "アプリ")
                 WidgetCenter.shared.reloadAllTimelines()
@@ -248,6 +294,62 @@ struct ContentView: View {
     private func savePresets() {
         SharedStore.savePresets(presets)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+struct EditTarget: Identifiable {
+    let id: UUID
+}
+
+/// 候補の名前・お店・メモを編集する画面
+struct MealEditView: View {
+    @Binding var meal: Meal
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("名前") {
+                    TextField("名前", text: $meal.name)
+                }
+
+                Section {
+                    TextField("リンク、住所、または店名", text: $meal.place.orEmpty, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if let url = meal.mapsURL {
+                        Link(destination: url) {
+                            Label(meal.placeIsLink ? "Google Mapsで開いて確認" : "道案内を試す", systemImage: "map")
+                        }
+                    }
+                } header: {
+                    Text("お店（Google Maps）")
+                } footer: {
+                    Text("Google Mapsの「共有」→「リンクをコピー」で取ったリンクを貼るとお店のページが、住所や店名を書くとそこへの道案内が開きます。")
+                }
+
+                Section("メモ") {
+                    TextField("営業時間、おすすめメニューなど", text: $meal.memo.orEmpty, axis: .vertical)
+                }
+            }
+            .navigationTitle("候補を編集")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完了") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private extension Binding where Value == String? {
+    /// 空文字は nil として保存する
+    var orEmpty: Binding<String> {
+        Binding<String>(
+            get: { wrappedValue ?? "" },
+            set: { wrappedValue = $0.isEmpty ? nil : $0 }
+        )
     }
 }
 
