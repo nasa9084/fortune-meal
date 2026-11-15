@@ -15,6 +15,8 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @State private var isRolling = false
     @State private var hapticTrigger = 0
+    @State private var isConfirmingMigration = false
+    @State private var migrationFailed = false
 
     private let defaultMeals = ["カレー", "ラーメン", "寿司", "パスタ", "牛丼", "定食", "ハンバーガー", "そば"]
     private let defaultPresets: [(name: String, meals: [String])] = [
@@ -87,6 +89,10 @@ struct ContentView: View {
                     Menu {
                         Button("すべて選択") { setAll(true) }
                         Button("すべて解除") { setAll(false) }
+                        Divider()
+                        Button("Capsulets へ移行", systemImage: "shippingbox") {
+                            isConfirmingMigration = true
+                        }
                     } label: {
                         Image(systemName: "checklist")
                     }
@@ -133,6 +139,17 @@ struct ContentView: View {
             }
         }
         .sensoryFeedback(.success, trigger: hapticTrigger) // 決まった瞬間に振動
+        .alert("Capsulets へ移行", isPresented: $isConfirmingMigration) {
+            Button("Capsulets を開く", action: migrateToCapsulets)
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("候補\(meals.count)件とプリセット\(presets.count)件を Capsulets の「ごはんくじ」に送ります。このアプリのデータはそのまま残ります。")
+        }
+        .alert("Capsulets を開けませんでした", isPresented: $migrationFailed) {
+            Button("OK") {}
+        } message: {
+            Text("Capsulets がインストールされているか確認してください。")
+        }
     }
 
     // MARK: - 部品
@@ -246,6 +263,20 @@ struct ContentView: View {
         }
     }
 
+    /// Capsulets の「ごはんくじ」にデータを渡す（capsulets://import/fortuneMeal?data=<base64url の JSON>）
+    private func migrateToCapsulets() {
+        let export = CapsuletsExport(version: 1, meals: meals, presets: presets, sortOrder: sortOrder.rawValue)
+        guard
+            let json = try? JSONEncoder().encode(export),
+            var components = URLComponents(string: "capsulets://import/fortuneMeal")
+        else { return }
+        components.queryItems = [URLQueryItem(name: "data", value: json.base64URLEncodedString())]
+        guard let url = components.url else { return }
+        openURL(url) { accepted in
+            if !accepted { migrationFailed = true }
+        }
+    }
+
     private func addMeal() {
         guard !trimmedName.isEmpty else { return }
         meals.append(Meal(name: trimmedName))
@@ -309,6 +340,24 @@ struct ContentView: View {
     private func savePresets() {
         SharedStore.savePresets(presets)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+/// Capsulets に渡すデータ（Capsulets 側の FortuneMealStore.Export と同じ形）
+struct CapsuletsExport: Codable {
+    var version: Int
+    var meals: [Meal]
+    var presets: [Preset]
+    var sortOrder: String?
+}
+
+extension Data {
+    /// URL にそのまま入れられる base64（`+` → `-`、`/` → `_`、`=` なし）
+    func base64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
 
